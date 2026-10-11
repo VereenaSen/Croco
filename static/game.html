@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Прыг-Крок</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Nunito:wght@600;800&display=swap">
+<style>
+/* Layout: one-screen arcade — canvas fills the frame, HUD floats top-right, overlays centered. Single deliberate dusk-swamp look. */
+:root {
+  --swamp-deep: #0f2a2a;
+  --swamp: #17403b;
+  --moss: #6fbf4a;
+  --reed: #d9c46a;
+  --lily: #f4efe0;
+  --berry: #e2566e;
+  --font-display: "Russo One", "Arial Black", system-ui, sans-serif;
+  --font-body: "Nunito", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--swamp-deep); color: var(--lily);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; touch-action: none;
+}
+#wrap { position: relative; width: 100%; height: 100%; }
+canvas { display: block; width: 100%; height: 100%; }
+#hud {
+  position: absolute; top: 14px; right: 16px; text-align: right;
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+#hud .label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--reed); font-weight: 800; }
+#score { font-family: var(--font-display); font-size: clamp(28px, 6vw, 44px); line-height: 1; color: var(--lily); text-shadow: 0 3px 0 var(--swamp); }
+#best { font-size: 13px; color: var(--reed); margin-top: 4px; }
+#hint { position: absolute; top: 16px; left: 16px; font-size: 13px; color: var(--reed); opacity: .85; pointer-events: none; max-width: 55%; }
+.overlay {
+  position: absolute; inset: 0; display: grid; place-items: center; padding-inline: 16px;
+  background: color-mix(in srgb, var(--swamp-deep) 72%, transparent);
+}
+.panel { text-align: center; display: grid; gap: 14px; justify-items: center; max-width: 420px; }
+.panel h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(36px, 9vw, 64px); color: var(--moss); text-wrap: balance; text-shadow: 0 4px 0 var(--swamp); }
+.panel p { margin: 0; line-height: 1.5; font-size: 15px; }
+.panel .big { font-family: var(--font-display); font-size: 40px; color: var(--reed); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; font-size: 13px; color: var(--reed); }
+button.go {
+  font-family: var(--font-display); font-size: 20px; color: var(--swamp-deep);
+  background: var(--moss); border: 0; border-radius: 14px; padding: 14px 28px; cursor: pointer;
+  box-shadow: 0 5px 0 #3f7d2a;
+}
+button.go:active { transform: translateY(3px); box-shadow: 0 2px 0 #3f7d2a; }
+button:focus-visible { outline: 3px solid var(--reed); outline-offset: 3px; }
+#touch { position: absolute; bottom: 16px; left: 16px; right: 16px; display: none; justify-content: space-between; pointer-events: none; }
+#touch .grp { display: flex; gap: 12px; }
+#touch button {
+  pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--reed);
+  background: color-mix(in srgb, var(--swamp) 70%, transparent); color: var(--lily); font-size: 24px;
+}
+@media (pointer: coarse) { #touch { display: flex; } #hint { display: none; } }
+</style>
+</head>
+<body>
+
+<div id="wrap">
+  <canvas id="c" tabindex="0"></canvas>
+  <div id="hint">← → бег · Пробел / ↑ прыжок</div>
+  <div id="hud"><div class="label">Очки</div><div id="score">0</div><div id="best"></div></div>
+
+  <div class="overlay" id="start">
+    <div class="panel">
+      <h1>Прыг-Крок</h1>
+      <p>Прыгай по блокам и собирай штучки. Чем выше блок, тем больше множитель очков. Не падай в болото!</p>
+      <div class="legend"><span>🪰 муха 5</span><span>🫐 ягода 10</span><span>🪙 монета 20</span><span>💎 кристалл 40</span></div>
+      <button class="go" id="startBtn">Начать</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="over" hidden>
+    <div class="panel">
+      <h1>Плюх!</h1>
+      <p>Крокодильчик упал в болото.</p>
+      <div class="big" id="final">0</div>
+      <p id="bestNote"></p>
+      <button class="go" id="restartBtn">Начать заново</button>
+    </div>
+  </div>
+
+  <div id="touch">
+    <div class="grp"><button id="tl" aria-label="Влево">◀</button><button id="tr" aria-label="Вправо">▶</button></div>
+    <div class="grp"><button id="tj" aria-label="Прыжок">▲</button></div>
+  </div>
+</div>
+
+<script>
+(() => {
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const scoreEl = document.getElementById('score'), bestEl = document.getElementById('best');
+const H = 540;              // logical height; width follows aspect
+let W = 960, scale = 1;
+
+const TIER_STEP = 70, BASE_Y = H - 70;     // tier 1 top = 470 ... tier 5 top = 190
+const tierY = t => BASE_Y - (t - 1) * TIER_STEP;
+const G = 2300, JUMP_V = 860, RUN = 290;   // max jump ≈ 160px > 2 tiers
+
+const ITEMS = [
+  { kind: 'fly',     pts: 5,  w: 40 },
+  { kind: 'berry',   pts: 10, w: 30 },
+  { kind: 'coin',    pts: 20, w: 18 },
+  { kind: 'crystal', pts: 40, w: 8 },
+];
+
+let blocks, items, pops, player, camX, score, running, keys = {}, lastBlock, t = 0;
+let best = 0;
+try { best = +localStorage.getItem('croc-best') || 0; } catch (e) {}
+const showBest = () => bestEl.textContent = best ? 'Рекорд ' + best : '';
+showBest();
+
+function resize() {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  scale = r.height / H; W = r.width / scale;
+  cv.width = r.width * dpr; cv.height = r.height * dpr;
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+}
+addEventListener('resize', resize);
+
+function pickItem() {
+  let r = Math.random() * 98;
+  for (const it of ITEMS) { if ((r -= it.w) < 0) return it; }
+  return ITEMS[0];
+}
+
+function addBlock() {
+  let x, tier, w;
+  if (!lastBlock) { x = -200; tier = 1; w = 520; }
+  else {
+    const dt = Math.floor(Math.random() * 5) - 2;            // -2..+2
+    tier = Math.max(1, Math.min(5, lastBlock.tier + dt));
+    const rise = tier - lastBlock.tier;
+    const maxGap = rise > 0 ? 150 - rise * 25 : 190;
+    x = lastBlock.x + lastBlock.w + 55 + Math.random() * (maxGap - 55);
+    w = 110 + Math.random() * 150;
+  }
+  const b = { x, w, tier, y: tierY(tier), h: 26, hue: Math.random() };
+  blocks.push(b); lastBlock = b;
+  if (blocks.length > 1) {
+    const n = w > 200 ? 2 : 1;
+    for (let i = 0; i < n; i++) {
+      if (Math.random() < 0.85) {
+        const it = pickItem();
+        items.push({ ...it, x: x + w * (n === 1 ? 0.5 : (i ? 0.72 : 0.28)), y: b.y - 34, tier, phase: Math.random() * 6, got: false });
+      }
+    }
+  }
+}
+
+function reset() {
+  blocks = []; items = []; pops = []; lastBlock = null; score = 0; camX = 0;
+  for (let i = 0; i < 8; i++) addBlock();
+  player = { x: 60, y: BASE_Y - 40, vx: 0, vy: 0, w: 58, h: 30, onGround: true, face: 1, coyote: 0, buffer: 0, squash: 0 };
+  scoreEl.textContent = '0';
+}
+
+function jumpPress() { if (player) player.buffer = 0.12; }
+
+function update(dt) {
+  const p = player;
+  const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+  const target = dir * RUN;
+  p.vx += (target - p.vx) * Math.min(1, dt * (p.onGround ? 14 : 6));
+  if (dir) p.face = dir;
+
+  p.coyote = p.onGround ? 0.1 : p.coyote - dt;
+  p.buffer -= dt;
+  if (p.buffer > 0 && p.coyote > 0) { p.vy = -JUMP_V; p.onGround = false; p.coyote = 0; p.buffer = 0; p.squash = -0.25; }
+  if (!keys.jump && p.vy < -300) p.vy += G * dt * 1.2;   // short hop on release
+
+  p.vy += G * dt;
+  const prevBottom = p.y + p.h;
+  p.x += p.vx * dt; p.y += p.vy * dt;
+  if (p.x < camX + 10) { p.x = camX + 10; p.vx = Math.max(0, p.vx); }
+
+  p.onGround = false;
+  if (p.vy >= 0) {
+    for (const b of blocks) {
+      if (p.x + p.w * 0.8 > b.x && p.x + p.w * 0.2 < b.x + b.w && prevBottom <= b.y + 2 && p.y + p.h >= b.y) {
+        p.y = b.y - p.h; if (p.vy > 600) p.squash = 0.25; p.vy = 0; p.onGround = true; break;
+      }
+    }
+  }
+  p.squash *= Math.pow(0.001, dt);
+
+  // collect
+  for (const it of items) {
+    if (it.got) continue;
+    const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    if (Math.abs(cx - it.x) < 38 && Math.abs(cy - it.y) < 36) {
+      it.got = true;
+      const pts = it.pts * it.tier;
+      score += pts; scoreEl.textContent = score;
+      pops.push({ x: it.x, y: it.y, text: '+' + pts, life: 1 });
+    }
+  }
+  for (const pp of pops) { pp.life -= dt * 1.3; pp.y -= dt * 50; }
+  pops = pops.filter(pp => pp.life > 0);
+
+  // camera
+  const want = p.x - W * 0.35;
+  camX += (Math.max(camX, want) - camX) * Math.min(1, dt * 5);
+
+  while (lastBlock.x < camX + W + 400) addBlock();
+  blocks = blocks.filter(b => b.x + b.w > camX - 200);
+  items = items.filter(it => it.x > camX - 200);
+
+  if (p.y > H + 60) gameOver();
+}
+
+// ---------- drawing ----------
+function drawBg() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#2a2f55'); g.addColorStop(0.55, '#7a4a5e'); g.addColorStop(0.8, '#d98a5a'); g.addColorStop(1, '#17403b');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // sun
+  ctx.fillStyle = '#f6c56a'; ctx.beginPath(); ctx.arc(W * 0.72, H * 0.62, 70, 0, 7); ctx.fill();
+  // far trees (parallax)
+  for (const [k, col, base, amp] of [[0.2, '#3b3557', H * 0.7, 60], [0.45, '#25364a', H * 0.78, 50]]) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, H);
+    for (let x = 0; x <= W + 20; x += 20) {
+      const wx = x + camX * k;
+      ctx.lineTo(x, base - amp * (0.5 + 0.5 * Math.sin(wx * 0.011) * Math.cos(wx * 0.0037)));
+    }
+    ctx.lineTo(W, H); ctx.fill();
+  }
+}
+
+function drawWater() {
+  const y0 = H - 34;
+  ctx.fillStyle = '#17403b'; ctx.fillRect(0, y0, W, 40);
+  ctx.strokeStyle = 'rgba(244,239,224,.18)'; ctx.lineWidth = 2;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 10) {
+      const y = y0 + 8 + i * 9 + Math.sin((x + camX * 0.6) * 0.04 + t * 2 + i) * 2;
+      x ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+  }
+}
+
+const BLOCK_COLS = ['#7c5a3a', '#8d6a3f', '#6f6a3a', '#7a4f3a', '#91724a'];
+function drawBlock(b) {
+  const x = b.x - camX;
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(x + 6, b.y + 8, b.w, b.h);
+  ctx.fillStyle = BLOCK_COLS[b.tier - 1]; ctx.fillRect(x, b.y, b.w, b.h);
+  ctx.fillStyle = '#6fbf4a'; ctx.fillRect(x, b.y, b.w, 7);
+  ctx.fillStyle = '#4f9a36'; for (let i = 6; i < b.w - 4; i += 14) ctx.fillRect(x + i, b.y + 7, 6, 3);
+  ctx.fillStyle = 'rgba(244,239,224,.75)'; ctx.font = '13px "Russo One", sans-serif'; ctx.textAlign = 'right';
+  ctx.fillText('×' + b.tier, x + b.w - 6, b.y + b.h - 4);
+}
+
+function drawItem(it) {
+  if (it.got) return;
+  const x = it.x - camX, y = it.y + Math.sin(t * 3 + it.phase) * 4;
+  ctx.save(); ctx.translate(x, y);
+  if (it.kind === 'fly') {
+    ctx.fillStyle = 'rgba(220,235,255,.7)';
+    const f = Math.sin(t * 40) * 3;
+    ctx.beginPath(); ctx.ellipse(-5, -6 - f, 6, 3, -0.6, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(5, -6 - f, 6, 3, 0.6, 0, 7); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.ellipse(0, 0, 7, 5, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#e2566e'; ctx.beginPath(); ctx.arc(6, -1, 2.5, 0, 7); ctx.fill();
+  } else if (it.kind === 'berry') {
+    ctx.fillStyle = '#5b5fd6'; for (const [dx, dy] of [[-5, 2], [5, 2], [0, -6]]) { ctx.beginPath(); ctx.arc(dx, dy, 7, 0, 7); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(-7, 0, 2, 0, 7); ctx.fill();
+    ctx.fillStyle = '#4f9a36'; ctx.fillRect(-1, -16, 3, 6);
+  } else if (it.kind === 'coin') {
+    const s = Math.abs(Math.cos(t * 3 + it.phase));
+    ctx.fillStyle = '#b8861f'; ctx.beginPath(); ctx.ellipse(0, 0, 11 * s + 2, 11, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#f6c56a'; ctx.beginPath(); ctx.ellipse(0, 0, 8 * s + 1, 8, 0, 0, 7); ctx.fill();
+  } else {
+    ctx.shadowColor = '#7ef0ff'; ctx.shadowBlur = 16;
+    ctx.fillStyle = '#7ef0ff'; ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(10, -3); ctx.lineTo(0, 13); ctx.lineTo(-10, -3); ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(4, -3); ctx.lineTo(0, 6); ctx.lineTo(-4, -3); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCroc(p) {
+  const x = p.x - camX + p.w / 2, y = p.y + p.h;
+  const run = p.onGround && Math.abs(p.vx) > 30 ? Math.sin(t * 22) : 0;
+  ctx.save(); ctx.translate(x, y); ctx.scale(p.face * (1 + p.squash * 0.6), 1 - p.squash);
+  // shadow-dark outline color
+  const body = '#5fae3e', belly = '#c9e07a', dark = '#2f6b25';
+  // tail
+  ctx.fillStyle = body; ctx.beginPath(); ctx.moveTo(-22, -18); ctx.quadraticCurveTo(-42, -16 + run * 3, -50, -8 - (p.onGround ? 0 : 6)); ctx.lineTo(-20, -6); ctx.closePath(); ctx.fill();
+  // legs
+  ctx.fillStyle = dark;
+  ctx.fillRect(-16 + run * 4, -8, 9, 8); ctx.fillRect(8 - run * 4, -8, 9, 8);
+  // body
+  ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(0, -16, 25, 13, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = belly; ctx.beginPath(); ctx.ellipse(2, -9, 19, 5, 0, 0, 7); ctx.fill();
+  // back bumps
+  ctx.fillStyle = dark; for (const bx of [-14, -5, 4]) { ctx.beginPath(); ctx.arc(bx, -28, 3.5, 0, 7); ctx.fill(); }
+  // snout
+  ctx.fillStyle = body; ctx.beginPath(); ctx.roundRect(14, -24, 26, 13, 6); ctx.fill();
+  ctx.strokeStyle = dark; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(18, -16); ctx.lineTo(38, -16); ctx.stroke();
+  ctx.fillStyle = '#fff'; for (const tx of [22, 28, 34]) { ctx.beginPath(); ctx.moveTo(tx, -16); ctx.lineTo(tx + 2, -13); ctx.lineTo(tx + 4, -16); ctx.fill(); }
+  ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(36, -21, 1.5, 0, 7); ctx.fill();
+  // eye
+  ctx.fillStyle = body; ctx.beginPath(); ctx.arc(14, -28, 7, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(15, -29, 5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#1b1b1b'; ctx.beginPath(); ctx.arc(16.5, -29, 2.5, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+function drawPops() {
+  ctx.textAlign = 'center'; ctx.font = '20px "Russo One", sans-serif';
+  for (const pp of pops) {
+    ctx.globalAlpha = Math.max(0, pp.life);
+    ctx.fillStyle = '#17403b'; ctx.fillText(pp.text, pp.x - camX + 2, pp.y + 2);
+    ctx.fillStyle = '#f6c56a'; ctx.fillText(pp.text, pp.x - camX, pp.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function render() {
+  drawBg();
+  drawWater();
+  blocks.forEach(drawBlock);
+  items.forEach(drawItem);
+  drawCroc(player);
+  drawPops();
+}
+
+let last = 0;
+function loop(ts) {
+  const dt = Math.min(0.033, (ts - last) / 1000 || 0); last = ts; t += dt;
+  if (running) update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+// ---------- flow ----------
+const startOv = document.getElementById('start'), overOv = document.getElementById('over');
+function begin() { reset(); startOv.hidden = true; overOv.hidden = true; running = true; keys = {}; cv.focus?.(); }
+function gameOver() {
+  running = false;
+  document.getElementById('final').textContent = score + ' очков';
+  const note = document.getElementById('bestNote');
+  if (score > best) { best = score; try { localStorage.setItem('croc-best', best); } catch (e) {} note.textContent = 'Новый рекорд!'; }
+  else note.textContent = 'Рекорд: ' + best;
+  showBest();
+  overOv.hidden = false;
+  document.getElementById('restartBtn').focus();
+}
+document.getElementById('startBtn').onclick = begin;
+document.getElementById('restartBtn').onclick = begin;
+
+const map = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'jump', KeyW: 'jump', Space: 'jump' };
+addEventListener('keydown', e => {
+  const k = map[e.code]; if (!k) return;
+  if (!running) { if (k === 'jump' && e.code !== 'Space') return; else if (k !== 'jump') return; }
+  e.preventDefault();
+  if (k === 'jump' && !keys.jump && running) jumpPress();
+  keys[k] = true;
+});
+addEventListener('keyup', e => { const k = map[e.code]; if (k) keys[k] = false; });
+
+function hold(id, k) {
+  const el = document.getElementById(id);
+  el.addEventListener('pointerdown', e => { e.preventDefault(); if (k === 'jump') jumpPress(); keys[k] = true; el.setPointerCapture?.(e.pointerId); });
+  const up = () => keys[k] = false;
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('lostpointercapture', up);
+}
+hold('tl', 'left'); hold('tr', 'right'); hold('tj', 'jump');
+
+resize(); reset(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
