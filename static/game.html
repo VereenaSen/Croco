@@ -27,21 +27,28 @@ html, body { height: 100%; margin: 0; }
 body {
   background: var(--swamp-deep); color: var(--lily);
   font-family: var(--font-body); overflow: hidden;
-  -webkit-user-select: none; user-select: none; touch-action: none;
+  -webkit-user-select: none; user-select: none; touch-action: pan-x pan-y;
   -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
-  overscroll-behavior: none;
 }
 #wrap { position: relative; width: 100%; height: 100%; display: grid; grid-template-rows: 1fr auto; }
 #stage { position: relative; min-height: 0; }
-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+canvas { display: block; width: 100%; height: 100%; touch-action: pan-x pan-y; }
+/* Касания блокируются только во время игры и только на поле и кнопках —
+   на экранах «Начать» / «Плюх!» и на свободной части панели свайп листает страницу */
+body.playing canvas { touch-action: none; }
 #hud {
   position: absolute; top: 14px; right: 16px; text-align: right;
   font-variant-numeric: tabular-nums; pointer-events: none;
+  text-shadow: 0 1px 2px rgba(15,42,42,.85), 0 0 8px rgba(15,42,42,.45);
 }
 #hud .label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--reed); font-weight: 800; }
 #score { font-family: var(--font-display); font-size: clamp(28px, 6vw, 44px); line-height: 1; color: var(--lily); text-shadow: 0 3px 0 var(--swamp); }
 #best { font-size: 13px; color: var(--reed); margin-top: 4px; }
-#hint { position: absolute; top: 16px; left: 16px; font-size: 13px; color: var(--reed); opacity: .85; pointer-events: none; max-width: 55%; }
+#lvl { font-size: 13px; font-weight: 800; color: var(--lily); margin-top: 6px; }
+#lvlbar { width: 96px; height: 6px; margin: 5px 0 0 auto; border-radius: 3px; background: rgba(244,239,224,.2); overflow: hidden; }
+#lvlbar i { display: block; height: 100%; width: 0; background: var(--moss); border-radius: 3px; transition: width .25s; }
+#win h1 { color: var(--reed); }
+#hint { position: absolute; top: 16px; left: 16px; font-size: 13px; color: var(--reed); opacity: .9; text-shadow: 0 1px 2px rgba(15,42,42,.85); pointer-events: none; max-width: 55%; }
 .overlay {
   position: absolute; inset: 0; display: grid; place-items: center; padding-inline: 16px; padding-block: 12px;
   background: rgba(15, 42, 42, .78); overflow-y: auto; z-index: 5;
@@ -58,6 +65,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 .panel .big { font-family: var(--font-display); font-size: 40px; color: var(--reed); font-variant-numeric: tabular-nums; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; font-size: 13px; color: var(--reed); }
 button { touch-action: manipulation; }
+#touch button { touch-action: none; }
 button.go {
   font-family: var(--font-display); font-size: 20px; color: var(--swamp-deep);
   background: var(--moss); border: 0; border-radius: 14px; padding: 14px 28px; cursor: pointer;
@@ -81,7 +89,7 @@ button:focus-visible { outline: 3px solid var(--reed); outline-offset: 3px; }
 #touch #tj { width: 84px; height: 84px; font-size: 30px; border-color: var(--moss); }
 #touch .tip { font-size: 12px; color: var(--reed); text-align: center; flex: 1; padding-inline: 8px; }
 @media (max-height: 420px) {
-  #touch { padding-block: 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
+  #touch { padding-block: 5px calc(5px + env(safe-area-inset-bottom, 0px)); padding-inline: calc(16px + env(safe-area-inset-left, 0px)) calc(16px + env(safe-area-inset-right, 0px)); }
   #touch button { width: 54px; height: 54px; font-size: 22px; }
   #touch #tj { width: 64px; height: 64px; }
 }
@@ -95,12 +103,12 @@ body.touch #hint { display: none; }
  <div id="stage">
   <canvas id="c" tabindex="0"></canvas>
   <div id="hint">← → бег · Пробел / ↑ прыжок</div>
-  <div id="hud"><div class="label">Очки</div><div id="score">0</div><div id="best"></div></div>
+  <div id="hud"><div class="label">Очки</div><div id="score">0</div><div id="lvl">Уровень 1 из 10</div><div id="lvlbar"><i id="lvlfill"></i></div><div id="best"></div></div>
 
   <div class="overlay" id="start">
     <div class="panel">
       <h1>Прыг-Крок</h1>
-      <p>Прыгай по блокам и собирай штучки. Чем выше блок, тем больше множитель очков. Не падай в болото!</p>
+      <p>Прыгай по блокам и собирай штучки. Чем выше блок, тем больше множитель очков. Каждые 1000 очков — новый уровень, всего их 10. Не падай в болото!</p>
       <div class="legend"><span>🪰 муха 5</span><span>🫐 ягода 10</span><span>🪙 монета 20</span><span>💎 кристалл 40</span></div>
       <button class="go" id="startBtn">Начать</button>
     </div>
@@ -113,6 +121,16 @@ body.touch #hint { display: none; }
       <div class="big" id="final">0</div>
       <p id="bestNote"></p>
       <button class="go" id="restartBtn">Начать заново</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="win" hidden>
+    <div class="panel">
+      <h1>Победа!</h1>
+      <p>Крокодильчик прошёл все 10 уровней!</p>
+      <div class="big" id="winScore">0</div>
+      <p id="winBest"></p>
+      <button class="go" id="againBtn">Играть снова</button>
     </div>
   </div>
  </div>
@@ -146,7 +164,30 @@ const ITEMS = [
   { kind: 'crystal', pts: 40, w: 8 },
 ];
 
+// ---------- levels ----------
+const LEVEL_PTS = 1000, MAX_LEVEL = 10;      // level N starts at (N-1)*1000; 10000 = victory
+// Only the background changes between levels. Last sky stop blends into the swamp.
+const THEMES = [
+  { name: 'Закат на болоте',  sky: ['#2a2f55', '#7a4a5e', '#d98a5a'], sun: '#f6c56a', trees: ['#3b3557', '#25364a'] },
+  { name: 'Утренний туман',   sky: ['#8fa9bb', '#c4d0c8', '#eadcb8'], sun: '#fff3d6', trees: ['#7d968e', '#56756e'] },
+  { name: 'Ясный полдень',    sky: ['#3d8fd6', '#7cc0ea', '#c9ecf5'], sun: '#fff7c2', trees: ['#4f8f5a', '#2f6b45'] },
+  { name: 'Золотая осень',    sky: ['#5a3f6e', '#c46a3a', '#f2b25c'], sun: '#ffe08a', trees: ['#8a3f2a', '#5e3a24'] },
+  { name: 'Перед грозой',     sky: ['#1d2430', '#3a4656', '#6b7a86'], sun: '#aeb8c0', trees: ['#2b3440', '#1c242e'], dim: true },
+  { name: 'Лунная ночь',      sky: ['#070b1f', '#141c45', '#2c3570'], sun: '#e8ecff', trees: ['#1a2040', '#0e1430'], stars: true, moon: true },
+  { name: 'Северное сияние',  sky: ['#06121f', '#0f3a48', '#1f6a62'], sun: '#d6fff2', trees: ['#0e2a34', '#08202a'], stars: true, aurora: true, moon: true },
+  { name: 'Розовый рассвет',  sky: ['#5b4a8a', '#e88aa8', '#ffd2b8'], sun: '#fff0e0', trees: ['#9a5a7a', '#6a3f62'] },
+  { name: 'Огненные вулканы', sky: ['#1a0a0a', '#5a1a12', '#c2401c'], sun: '#ff8a3a', trees: ['#3a1410', '#220c0a'], embers: true },
+  { name: 'Звёздный финал',   sky: ['#1b0f3a', '#4a1f7a', '#d04a9a'], sun: '#ffd86a', trees: ['#3a1f5e', '#26154a'], stars: true },
+];
+const STARS = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + 0.4, p: Math.random() * 6 }));
+
 let blocks, items, pops, player, camX, score, running, keys = {}, lastBlock, t = 0;
+let level = 1, prevLevel = 1, fade = 1, banner = 0;
+const lvlEl = document.getElementById('lvl'), lvlFill = document.getElementById('lvlfill');
+function showLevel() {
+  lvlEl.textContent = 'Уровень ' + level + ' из ' + MAX_LEVEL;
+  lvlFill.style.width = Math.min(100, (score - (level - 1) * LEVEL_PTS) / LEVEL_PTS * 100) + '%';
+}
 let best = 0;
 try { best = +localStorage.getItem('croc-best') || 0; } catch (e) {}
 const showBest = () => bestEl.textContent = best ? 'Рекорд ' + best : '';
@@ -212,6 +253,14 @@ function reset() {
   for (let i = 0; i < 8; i++) addBlock();
   player = { x: 60, y: BASE_Y - 40, vx: 0, vy: 0, w: 58, h: 30, onGround: true, face: 1, coyote: 0, buffer: 0, squash: 0 };
   scoreEl.textContent = '0';
+  level = 1; prevLevel = 1; fade = 1; banner = 0; showLevel();
+}
+
+function checkLevel() {
+  if (score >= MAX_LEVEL * LEVEL_PTS) { showLevel(); victory(); return; }
+  const want = Math.min(MAX_LEVEL, 1 + Math.floor(score / LEVEL_PTS));
+  if (want > level) { prevLevel = level; level = want; fade = 0; banner = 2.4; }
+  showLevel();
 }
 
 function jumpPress() { if (player) player.buffer = 0.12; }
@@ -253,6 +302,8 @@ function update(dt) {
       const pts = it.pts * it.tier;
       score += pts; scoreEl.textContent = score;
       pops.push({ x: it.x, y: it.y, text: '+' + pts, life: 1 });
+      checkLevel();
+      if (!running) return;
     }
   }
   for (const pp of pops) { pp.life -= dt * 1.3; pp.y -= dt * 50; }
@@ -271,14 +322,34 @@ function update(dt) {
 }
 
 // ---------- drawing ----------
-function drawBg() {
+function drawSky(th) {
   const g = ctx.createLinearGradient(0, -offY, 0, H);
-  g.addColorStop(0, '#2a2f55'); g.addColorStop(0.55, '#7a4a5e'); g.addColorStop(0.8, '#d98a5a'); g.addColorStop(1, '#17403b');
+  g.addColorStop(0, th.sky[0]); g.addColorStop(0.55, th.sky[1]); g.addColorStop(0.8, th.sky[2]); g.addColorStop(1, '#17403b');
   ctx.fillStyle = g; ctx.fillRect(0, -offY, W, VH);
-  // sun
-  ctx.fillStyle = '#f6c56a'; ctx.beginPath(); ctx.arc(W * 0.72, H * 0.62, 70, 0, 7); ctx.fill();
+  if (th.stars) {
+    for (const st of STARS) {
+      const a = 0.45 + 0.4 * Math.sin(t * 2 + st.p);
+      ctx.fillStyle = 'rgba(255,255,255,' + a.toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(st.x * W, -offY + st.y * (VH * 0.55), st.r, 0, 7); ctx.fill();
+    }
+  }
+  if (th.aurora) {
+    for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = ['rgba(110,255,190,.22)', 'rgba(120,200,255,.16)', 'rgba(190,130,255,.14)'][i];
+      ctx.lineWidth = 26 - i * 6; ctx.beginPath();
+      for (let x = -20; x <= W + 20; x += 20) {
+        const y = H * 0.18 + i * 26 + Math.sin(x * 0.006 + t * 0.6 + i) * 30 + Math.sin(x * 0.017 - t * 0.4) * 10;
+        x > -20 ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+  // sun / moon
+  ctx.fillStyle = th.sun; ctx.beginPath();
+  if (th.moon) { ctx.arc(W * 0.78, H * 0.22, 34, 0, 7); ctx.fill(); ctx.fillStyle = th.sky[0]; ctx.globalAlpha *= 0.85; ctx.beginPath(); ctx.arc(W * 0.78 + 14, H * 0.22 - 8, 30, 0, 7); ctx.fill(); ctx.globalAlpha /= 0.85; }
+  else { ctx.globalAlpha *= th.dim ? 0.45 : 1; ctx.arc(W * 0.72, H * 0.62, 70, 0, 7); ctx.fill(); ctx.globalAlpha /= th.dim ? 0.45 : 1; }
   // far trees (parallax)
-  for (const [k, col, base, amp] of [[0.2, '#3b3557', H * 0.7, 60], [0.45, '#25364a', H * 0.78, 50]]) {
+  for (const [k, col, base, amp] of [[0.2, th.trees[0], H * 0.7, 60], [0.45, th.trees[1], H * 0.78, 50]]) {
     ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, H);
     for (let x = 0; x <= W + 20; x += 20) {
       const wx = x + camX * k;
@@ -286,6 +357,34 @@ function drawBg() {
     }
     ctx.lineTo(W, H); ctx.fill();
   }
+  if (th.embers) {
+    for (let i = 0; i < 24; i++) {
+      const x = ((i * 137.5 + t * 18 * (1 + i % 3) - camX * 0.3) % (W + 40) + W + 40) % (W + 40) - 20;
+      const y = H * 0.85 - ((t * 40 * (1 + i % 4) + i * 53) % (H * 0.9));
+      ctx.fillStyle = 'rgba(255,' + (120 + (i % 5) * 20) + ',60,.7)';
+      ctx.beginPath(); ctx.arc(x, y, 1.6 + (i % 3) * 0.6, 0, 7); ctx.fill();
+    }
+  }
+}
+
+function drawBg() {
+  if (fade < 1) {
+    drawSky(THEMES[prevLevel - 1]);
+    ctx.globalAlpha = fade; drawSky(THEMES[level - 1]); ctx.globalAlpha = 1;
+  } else drawSky(THEMES[level - 1]);
+}
+
+function drawBanner() {
+  if (banner <= 0) return;
+  const a = Math.min(1, banner / 0.5, (2.4 - banner) / 0.3);
+  ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.textAlign = 'center';
+  ctx.font = '44px "Russo One", sans-serif';
+  ctx.fillStyle = '#17403b'; ctx.fillText('Уровень ' + level, W / 2 + 3, H * 0.3 + 3);
+  ctx.fillStyle = '#f4efe0'; ctx.fillText('Уровень ' + level, W / 2, H * 0.3);
+  ctx.font = '800 20px "Nunito", sans-serif';
+  ctx.fillStyle = '#17403b'; ctx.fillText(THEMES[level - 1].name, W / 2 + 2, H * 0.3 + 36);
+  ctx.fillStyle = '#f6d96a'; ctx.fillText(THEMES[level - 1].name, W / 2, H * 0.3 + 34);
+  ctx.restore();
 }
 
 function drawWater() {
@@ -387,11 +486,14 @@ function render() {
   items.forEach(drawItem);
   drawCroc(player);
   drawPops();
+  drawBanner();
 }
 
 let last = 0;
 function loop(ts) {
   const dt = Math.min(0.033, (ts - last) / 1000 || 0); last = ts; t += dt;
+  if (fade < 1) fade = Math.min(1, fade + dt / 1.2);
+  if (banner > 0) banner -= dt;
   try {
     if (running) update(dt);
     render();
@@ -400,25 +502,32 @@ function loop(ts) {
 }
 
 // ---------- flow ----------
-const startOv = document.getElementById('start'), overOv = document.getElementById('over');
+const startOv = document.getElementById('start'), overOv = document.getElementById('over'), winOv = document.getElementById('win');
 function begin() {
-  resize(); reset(); startOv.hidden = true; overOv.hidden = true; keys = {};
+  resize(); reset(); startOv.hidden = true; overOv.hidden = true; winOv.hidden = true; keys = {};
   document.querySelectorAll('#touch button').forEach(b => b.classList.remove('on'));
-  running = true;
+  running = true; document.body.classList.add('playing');
   try { cv.focus({ preventScroll: true }); } catch (e) {}
 }
-function gameOver() {
-  running = false;
-  document.getElementById('final').textContent = score + ' очков';
-  const note = document.getElementById('bestNote');
+function finish(ov, scoreId, noteId, btnId) {
+  running = false; document.body.classList.remove('playing'); keys = {};
+  document.querySelectorAll('#touch button').forEach(b => b.classList.remove('on'));
+  document.getElementById(scoreId).textContent = score + ' очков';
+  const note = document.getElementById(noteId);
   if (score > best) { best = score; try { localStorage.setItem('croc-best', best); } catch (e) {} note.textContent = 'Новый рекорд!'; }
   else note.textContent = 'Рекорд: ' + best;
   showBest();
-  overOv.hidden = false;
-  document.getElementById('restartBtn').focus();
+  ov.hidden = false;
+  document.getElementById(btnId).focus();
 }
+function gameOver() {
+  document.querySelector('#over p').textContent = 'Крокодильчик упал в болото на уровне ' + level + '.';
+  finish(overOv, 'final', 'bestNote', 'restartBtn');
+}
+function victory() { banner = 0; finish(winOv, 'winScore', 'winBest', 'againBtn'); }
 document.getElementById('startBtn').onclick = begin;
 document.getElementById('restartBtn').onclick = begin;
+document.getElementById('againBtn').onclick = begin;
 
 const map = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'jump', KeyW: 'jump', Space: 'jump' };
 addEventListener('keydown', e => {
@@ -454,7 +563,9 @@ const canvasUp = e => { if (e.pointerId === canvasTouch) { canvasTouch = null; k
 cv.addEventListener('pointerup', canvasUp); cv.addEventListener('pointercancel', canvasUp);
 
 // Stop iOS double-tap zoom and page bounce while playing
-document.addEventListener('touchmove', e => { if (running) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', e => {
+  if (running && (e.target === cv || e.target.closest('#touch button'))) e.preventDefault();
+}, { passive: false });
 document.addEventListener('dblclick', e => e.preventDefault());
 
 // Release all controls when the tab/app goes to background

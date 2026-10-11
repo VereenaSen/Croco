@@ -31,6 +31,23 @@ st.markdown(
         h1 { font-size: 1.6rem !important; }
         iframe { border-radius: 10px; }
       }
+      /* Телефон в горизонтальной ориентации: экран низкий, поэтому прячем
+         шапку, заголовок и подсказку, а окно игры подгоняем ровно под высоту
+         экрана — кнопки внизу всегда видны. Ниже игры страница прокручивается
+         (там «Как считаются очки»). */
+      @media (orientation: landscape) and (max-height: 520px) {
+        header[data-testid="stHeader"] { display: none !important; }
+        .block-container { padding: 0.25rem 0.75rem 2rem !important; }
+        [data-testid="stElementContainer"]:has([data-testid="stHeading"]),
+        [data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]),
+        [data-testid="stElementContainer"]:has(style) { display: none !important; }
+        [data-testid="stElementContainer"]:has(> iframe) { height: auto !important; }
+        iframe {
+          height: calc(100vh - 0.5rem) !important;
+          height: calc(100dvh - 0.5rem) !important;
+          border-radius: 8px;
+        }
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -62,5 +79,8 @@ with st.expander("Как считаются очки"):
 
 Базовые очки умножаются на высоту блока (×1 … ×5, множитель написан на блоке).
 Упал в болото — игра окончена, жми «Начать заново».
+
+**Уровни.** Каждые 1000 очков — новый уровень: 2-й с 1000, 3-й с 2000 … 10-й с 9000.
+Меняется только фон. Набери 10 000 очков — пройдёшь 10-й уровень и победишь!
 """
     )
