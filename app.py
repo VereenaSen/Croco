@@ -10,16 +10,27 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 GAME_FILE = Path(__file__).parent / "static" / "game.html"
-GAME_HEIGHT = 560  # высота окна игры в пикселях
+GAME_HEIGHT = 600  # высота окна игры в пикселях (на телефоне включает панель кнопок)
 
-st.set_page_config(page_title="Прыг-Крок", page_icon="🐊", layout="wide")
+st.set_page_config(
+    page_title="Прыг-Крок",
+    page_icon="🐊",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-# Убираем лишние отступы Streamlit, чтобы игра занимала больше места
+# Убираем лишние отступы Streamlit, чтобы игра занимала больше места,
+# особенно на узких экранах телефонов
 st.markdown(
     """
     <style>
-      .block-container { padding-top: 1.5rem; padding-bottom: 1rem; }
-      iframe { border-radius: 14px; }
+      .block-container { padding-top: 1.2rem; padding-bottom: 1rem; }
+      iframe { border-radius: 14px; display: block; }
+      @media (max-width: 640px) {
+        .block-container { padding-left: 0.5rem; padding-right: 0.5rem; padding-top: 0.6rem; }
+        h1 { font-size: 1.6rem !important; }
+        iframe { border-radius: 10px; }
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -27,8 +38,8 @@ st.markdown(
 
 st.title("🐊 Прыг-Крок")
 st.caption(
-    "Кликни по игре, чтобы она получила фокус клавиатуры. "
-    "← → — бег, Пробел / ↑ — прыжок. На телефоне — экранные кнопки."
+    "Компьютер: кликни по игре, затем ← → — бег, Пробел / ↑ — прыжок. "
+    "Телефон: кнопки под игрой или тап по экрану. В горизонтальной ориентации видно больше уровня."
 )
 
 

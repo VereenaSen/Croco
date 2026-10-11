@@ -2,7 +2,9 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Прыг-Крок</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Nunito:wght@600;800&display=swap">
@@ -19,14 +21,19 @@
   --font-body: "Nunito", "Segoe UI", system-ui, sans-serif;
   color-scheme: dark;
 }
+[hidden] { display: none !important; }
+*, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
   background: var(--swamp-deep); color: var(--lily);
   font-family: var(--font-body); overflow: hidden;
   -webkit-user-select: none; user-select: none; touch-action: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
-#wrap { position: relative; width: 100%; height: 100%; }
-canvas { display: block; width: 100%; height: 100%; }
+#wrap { position: relative; width: 100%; height: 100%; display: grid; grid-template-rows: 1fr auto; }
+#stage { position: relative; min-height: 0; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 #hud {
   position: absolute; top: 14px; right: 16px; text-align: right;
   font-variant-numeric: tabular-nums; pointer-events: none;
@@ -36,33 +43,56 @@ canvas { display: block; width: 100%; height: 100%; }
 #best { font-size: 13px; color: var(--reed); margin-top: 4px; }
 #hint { position: absolute; top: 16px; left: 16px; font-size: 13px; color: var(--reed); opacity: .85; pointer-events: none; max-width: 55%; }
 .overlay {
-  position: absolute; inset: 0; display: grid; place-items: center; padding-inline: 16px;
-  background: color-mix(in srgb, var(--swamp-deep) 72%, transparent);
+  position: absolute; inset: 0; display: grid; place-items: center; padding-inline: 16px; padding-block: 12px;
+  background: rgba(15, 42, 42, .78); overflow-y: auto; z-index: 5;
 }
 .panel { text-align: center; display: grid; gap: 14px; justify-items: center; max-width: 420px; }
+@media (max-height: 420px) {
+  .panel { gap: 8px; }
+  .panel h1 { font-size: 32px !important; }
+  .panel p { font-size: 13px !important; }
+  .panel .big { font-size: 28px !important; }
+}
 .panel h1 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: clamp(36px, 9vw, 64px); color: var(--moss); text-wrap: balance; text-shadow: 0 4px 0 var(--swamp); }
 .panel p { margin: 0; line-height: 1.5; font-size: 15px; }
 .panel .big { font-family: var(--font-display); font-size: 40px; color: var(--reed); font-variant-numeric: tabular-nums; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; font-size: 13px; color: var(--reed); }
+button { touch-action: manipulation; }
 button.go {
   font-family: var(--font-display); font-size: 20px; color: var(--swamp-deep);
   background: var(--moss); border: 0; border-radius: 14px; padding: 14px 28px; cursor: pointer;
-  box-shadow: 0 5px 0 #3f7d2a;
+  box-shadow: 0 5px 0 #3f7d2a; min-height: 52px;
 }
 button.go:active { transform: translateY(3px); box-shadow: 0 2px 0 #3f7d2a; }
 button:focus-visible { outline: 3px solid var(--reed); outline-offset: 3px; }
-#touch { position: absolute; bottom: 16px; left: 16px; right: 16px; display: none; justify-content: space-between; pointer-events: none; }
-#touch .grp { display: flex; gap: 12px; }
-#touch button {
-  pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--reed);
-  background: color-mix(in srgb, var(--swamp) 70%, transparent); color: var(--lily); font-size: 24px;
+/* Touch controls: a bar under the playfield, so thumbs never cover the blocks */
+#touch {
+  display: none; justify-content: space-between; align-items: center;
+  padding-inline: 16px; padding-block: 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: var(--swamp-deep); border-top: 2px solid var(--swamp);
 }
-@media (pointer: coarse) { #touch { display: flex; } #hint { display: none; } }
+#touch .grp { display: flex; gap: 14px; }
+#touch button {
+  width: 68px; height: 68px; border-radius: 50%; border: 2px solid var(--reed);
+  background: var(--swamp); color: var(--lily); font-size: 26px; padding: 0;
+  display: grid; place-items: center;
+}
+#touch button.on { background: var(--moss); color: var(--swamp-deep); }
+#touch #tj { width: 84px; height: 84px; font-size: 30px; border-color: var(--moss); }
+#touch .tip { font-size: 12px; color: var(--reed); text-align: center; flex: 1; padding-inline: 8px; }
+@media (max-height: 420px) {
+  #touch { padding-block: 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
+  #touch button { width: 54px; height: 54px; font-size: 22px; }
+  #touch #tj { width: 64px; height: 64px; }
+}
+body.touch #touch { display: flex; }
+body.touch #hint { display: none; }
 </style>
 </head>
 <body>
 
 <div id="wrap">
+ <div id="stage">
   <canvas id="c" tabindex="0"></canvas>
   <div id="hint">← → бег · Пробел / ↑ прыжок</div>
   <div id="hud"><div class="label">Очки</div><div id="score">0</div><div id="best"></div></div>
@@ -85,9 +115,11 @@ button:focus-visible { outline: 3px solid var(--reed); outline-offset: 3px; }
       <button class="go" id="restartBtn">Начать заново</button>
     </div>
   </div>
+ </div>
 
   <div id="touch">
     <div class="grp"><button id="tl" aria-label="Влево">◀</button><button id="tr" aria-label="Вправо">▶</button></div>
+    <div class="tip">Тап по экрану — тоже прыжок</div>
     <div class="grp"><button id="tj" aria-label="Прыжок">▲</button></div>
   </div>
 </div>
@@ -96,8 +128,12 @@ button:focus-visible { outline: 3px solid var(--reed); outline-offset: 3px; }
 (() => {
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const scoreEl = document.getElementById('score'), bestEl = document.getElementById('best');
-const H = 540;              // logical height; width follows aspect
-let W = 960, scale = 1;
+const H = 540;              // logical height of the playfield
+const MIN_W = 620;          // always show at least this much world ahead, even in portrait
+let W = 960, VH = H, offY = 0, scale = 1, sizeOk = false, lastCW = 0, lastCH = 0;
+
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+if (isTouch) document.body.classList.add('touch');
 
 const TIER_STEP = 70, BASE_Y = H - 70;     // tier 1 top = 470 ... tier 5 top = 190
 const tierY = t => BASE_Y - (t - 1) * TIER_STEP;
@@ -116,13 +152,30 @@ try { best = +localStorage.getItem('croc-best') || 0; } catch (e) {}
 const showBest = () => bestEl.textContent = best ? 'Рекорд ' + best : '';
 showBest();
 
+// Fit the world to the canvas. Narrow (portrait) screens zoom out so MIN_W of the
+// level stays visible; the extra height goes to sky above, the swamp stays at the bottom.
 function resize() {
-  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-  scale = r.height / H; W = r.width / scale;
-  cv.width = r.width * dpr; cv.height = r.height * dpr;
-  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+  const cw = cv.clientWidth, ch = cv.clientHeight;
+  lastCW = cw; lastCH = ch;
+  if (!cw || !ch) { sizeOk = false; return; }       // layout not ready yet (iframe on phones)
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  scale = Math.min(ch / H, cw / MIN_W);
+  W = cw / scale; VH = ch / scale; offY = VH - H;
+  cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, dpr * scale * offY);
+  sizeOk = isFinite(W) && W > 0;
 }
 addEventListener('resize', resize);
+addEventListener('orientationchange', () => setTimeout(resize, 250));
+if (window.ResizeObserver) new ResizeObserver(resize).observe(cv);
+
+function roundRectPath(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
 
 function pickItem() {
   let r = Math.random() * 98;
@@ -164,6 +217,7 @@ function reset() {
 function jumpPress() { if (player) player.buffer = 0.12; }
 
 function update(dt) {
+  if (!sizeOk) return;                      // never simulate with an unknown screen size
   const p = player;
   const dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
   const target = dir * RUN;
@@ -207,6 +261,7 @@ function update(dt) {
   // camera
   const want = p.x - W * 0.35;
   camX += (Math.max(camX, want) - camX) * Math.min(1, dt * 5);
+  if (!isFinite(camX)) camX = Math.max(0, p.x - 200);
 
   while (lastBlock.x < camX + W + 400) addBlock();
   blocks = blocks.filter(b => b.x + b.w > camX - 200);
@@ -217,9 +272,9 @@ function update(dt) {
 
 // ---------- drawing ----------
 function drawBg() {
-  const g = ctx.createLinearGradient(0, 0, 0, H);
+  const g = ctx.createLinearGradient(0, -offY, 0, H);
   g.addColorStop(0, '#2a2f55'); g.addColorStop(0.55, '#7a4a5e'); g.addColorStop(0.8, '#d98a5a'); g.addColorStop(1, '#17403b');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = g; ctx.fillRect(0, -offY, W, VH);
   // sun
   ctx.fillStyle = '#f6c56a'; ctx.beginPath(); ctx.arc(W * 0.72, H * 0.62, 70, 0, 7); ctx.fill();
   // far trees (parallax)
@@ -302,7 +357,7 @@ function drawCroc(p) {
   // back bumps
   ctx.fillStyle = dark; for (const bx of [-14, -5, 4]) { ctx.beginPath(); ctx.arc(bx, -28, 3.5, 0, 7); ctx.fill(); }
   // snout
-  ctx.fillStyle = body; ctx.beginPath(); ctx.roundRect(14, -24, 26, 13, 6); ctx.fill();
+  ctx.fillStyle = body; roundRectPath(14, -24, 26, 13, 6); ctx.fill();
   ctx.strokeStyle = dark; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(18, -16); ctx.lineTo(38, -16); ctx.stroke();
   ctx.fillStyle = '#fff'; for (const tx of [22, 28, 34]) { ctx.beginPath(); ctx.moveTo(tx, -16); ctx.lineTo(tx + 2, -13); ctx.lineTo(tx + 4, -16); ctx.fill(); }
   ctx.fillStyle = dark; ctx.beginPath(); ctx.arc(36, -21, 1.5, 0, 7); ctx.fill();
@@ -324,6 +379,8 @@ function drawPops() {
 }
 
 function render() {
+  if (cv.clientWidth !== lastCW || cv.clientHeight !== lastCH) resize();
+  if (!sizeOk) return;
   drawBg();
   drawWater();
   blocks.forEach(drawBlock);
@@ -335,14 +392,21 @@ function render() {
 let last = 0;
 function loop(ts) {
   const dt = Math.min(0.033, (ts - last) / 1000 || 0); last = ts; t += dt;
-  if (running) update(dt);
-  render();
+  try {
+    if (running) update(dt);
+    render();
+  } catch (err) { console.error(err); }
   requestAnimationFrame(loop);
 }
 
 // ---------- flow ----------
 const startOv = document.getElementById('start'), overOv = document.getElementById('over');
-function begin() { reset(); startOv.hidden = true; overOv.hidden = true; running = true; keys = {}; cv.focus?.(); }
+function begin() {
+  resize(); reset(); startOv.hidden = true; overOv.hidden = true; keys = {};
+  document.querySelectorAll('#touch button').forEach(b => b.classList.remove('on'));
+  running = true;
+  try { cv.focus({ preventScroll: true }); } catch (e) {}
+}
 function gameOver() {
   running = false;
   document.getElementById('final').textContent = score + ' очков';
@@ -368,11 +432,35 @@ addEventListener('keyup', e => { const k = map[e.code]; if (k) keys[k] = false; 
 
 function hold(id, k) {
   const el = document.getElementById(id);
-  el.addEventListener('pointerdown', e => { e.preventDefault(); if (k === 'jump') jumpPress(); keys[k] = true; el.setPointerCapture?.(e.pointerId); });
-  const up = () => keys[k] = false;
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (k === 'jump') jumpPress();
+    keys[k] = true; el.classList.add('on');
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  const up = () => { keys[k] = false; el.classList.remove('on'); };
   el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('lostpointercapture', up);
+  el.addEventListener('contextmenu', e => e.preventDefault());
 }
 hold('tl', 'left'); hold('tr', 'right'); hold('tj', 'jump');
+
+// Tap anywhere on the playfield = jump (hold for a higher jump)
+let canvasTouch = null;
+cv.addEventListener('pointerdown', e => {
+  if (!running) return;
+  e.preventDefault(); canvasTouch = e.pointerId; jumpPress(); keys.jump = true;
+});
+const canvasUp = e => { if (e.pointerId === canvasTouch) { canvasTouch = null; keys.jump = false; } };
+cv.addEventListener('pointerup', canvasUp); cv.addEventListener('pointercancel', canvasUp);
+
+// Stop iOS double-tap zoom and page bounce while playing
+document.addEventListener('touchmove', e => { if (running) e.preventDefault(); }, { passive: false });
+document.addEventListener('dblclick', e => e.preventDefault());
+
+// Release all controls when the tab/app goes to background
+document.addEventListener('visibilitychange', () => {
+  keys = {}; document.querySelectorAll('#touch button').forEach(b => b.classList.remove('on'));
+});
 
 resize(); reset(); requestAnimationFrame(loop);
 })();
